@@ -1,0 +1,193 @@
+name: FINAL - Build Kliptora v2.3.5 Setup
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v2.3.5'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build verified Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: Kliptora/requirements.txt
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip wheel
+          python -m pip install --requirement Kliptora/requirements.txt pyinstaller
+
+      - name: Validate Python sources
+        shell: pwsh
+        run: |
+          python -m compileall -q Kliptora
+          python -c "import PySide6, yt_dlp, yt_dlp_ejs, curl_cffi; print('Dependencies imported successfully')"
+
+      - name: Bundle verified FFmpeg binaries
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip'
+          $archive = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
+          $extract = Join-Path $env:RUNNER_TEMP 'ffmpeg-extract'
+          $target = Join-Path $env:GITHUB_WORKSPACE 'Kliptora\tools\ffmpeg\bin'
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          curl.exe -L --fail --retry 4 --retry-delay 3 --connect-timeout 30 -o $archive $url
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg indirilemedi.' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
+          $ffmpeg = Get-ChildItem $extract -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          $ffprobe = Get-ChildItem $extract -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          if (-not $ffmpeg -or -not $ffprobe) { throw 'FFmpeg arşivinde gerekli dosyalar bulunamadı.' }
+          Copy-Item $ffmpeg.FullName (Join-Path $target 'ffmpeg.exe') -Force
+          Copy-Item $ffprobe.FullName (Join-Path $target 'ffprobe.exe') -Force
+          & (Join-Path $target 'ffmpeg.exe') -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'Paketlenen FFmpeg çalıştırılamadı.' }
+
+      - name: Bundle verified Deno binary
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip'
+          $archive = Join-Path $env:RUNNER_TEMP 'deno.zip'
+          $extract = Join-Path $env:RUNNER_TEMP 'deno-extract'
+          $target = Join-Path $env:GITHUB_WORKSPACE 'Kliptora\tools\deno\bin'
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          curl.exe -L --fail --retry 4 --retry-delay 3 --connect-timeout 30 -o $archive $url
+          if ($LASTEXITCODE -ne 0) { throw 'Deno indirilemedi.' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
+          $deno = Get-ChildItem $extract -Recurse -Filter deno.exe | Select-Object -First 1
+          if (-not $deno) { throw 'Deno arşivinde deno.exe bulunamadı.' }
+          Copy-Item $deno.FullName (Join-Path $target 'deno.exe') -Force
+          & (Join-Path $target 'deno.exe') --version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'Paketlenen Deno çalıştırılamadı.' }
+
+      - name: Build Kliptora.exe
+        shell: pwsh
+        working-directory: Kliptora
+        run: |
+          pyinstaller --clean --noconfirm Kliptora.spec
+          $app = Join-Path $PWD 'dist\Kliptora\Kliptora.exe'
+          if (!(Test-Path -LiteralPath $app)) {
+            throw "Kliptora.exe bulunamadi: $app"
+          }
+          Write-Host "Kliptora.exe hazir: $app"
+          $ffmpeg = Get-ChildItem (Join-Path $PWD 'dist\Kliptora') -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          $ffprobe = Get-ChildItem (Join-Path $PWD 'dist\Kliptora') -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          if (-not $ffmpeg -or -not $ffprobe) { throw 'FFmpeg uygulama paketine eklenmedi.' }
+          & $ffmpeg.FullName -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'Paket icindeki FFmpeg calismadi.' }
+          Write-Host "Bundled FFmpeg hazir: $($ffmpeg.FullName)"
+          $deno = Get-ChildItem (Join-Path $PWD 'dist\Kliptora') -Recurse -Filter deno.exe | Select-Object -First 1
+          if (-not $deno) { throw 'Deno uygulama paketine eklenmedi.' }
+          & $deno.FullName --version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'Paket icindeki Deno calismadi.' }
+          Write-Host "Bundled Deno hazir: $($deno.FullName)"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build Setup.exe
+        shell: pwsh
+        run: |
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          $iss = Join-Path $env:GITHUB_WORKSPACE 'installer\Kliptora.iss'
+          $artifactDir = Join-Path $env:GITHUB_WORKSPACE 'artifact'
+          $setup = Join-Path $artifactDir 'Kliptora-Setup-v2.3.5.exe'
+
+          if (!(Test-Path -LiteralPath $iscc)) { throw "ISCC.exe bulunamadi: $iscc" }
+          if (!(Test-Path -LiteralPath $iss)) { throw "Kliptora.iss bulunamadi: $iss" }
+
+          New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+          & $iscc "/O$artifactDir" "/FKliptora-Setup-v2.3.5" $iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup hata kodu: $LASTEXITCODE" }
+          if (!(Test-Path -LiteralPath $setup)) { throw "Setup.exe olusmadi: $setup" }
+
+          Get-Item -LiteralPath $setup | Format-List FullName, Length, LastWriteTime
+
+      - name: Optional Authenticode signing
+        if: env.SIGNING_CERT != ''
+        shell: pwsh
+        env:
+          SIGNING_CERT: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          [IO.File]::WriteAllBytes('cert.pfx', [Convert]::FromBase64String($env:SIGNING_CERT))
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { throw 'signtool.exe bulunamadi.' }
+          & $signtool sign /f cert.pfx /p $env:SIGNING_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 'artifact\Kliptora-Setup-v2.3.5.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'Kod imzalama basarisiz.' }
+          Remove-Item cert.pfx -Force
+
+      - name: Create SHA-256 file
+        shell: pwsh
+        run: |
+          $artifactDir = Join-Path $env:GITHUB_WORKSPACE 'artifact'
+          $setup = Join-Path $artifactDir 'Kliptora-Setup-v2.3.5.exe'
+          $hashFile = Join-Path $artifactDir 'Kliptora-Setup-v2.3.5.sha256.txt'
+          $hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash
+          "$hash  Kliptora-Setup-v2.3.5.exe" | Set-Content -LiteralPath $hashFile -Encoding ascii
+          Write-Host "SHA-256: $hash"
+
+      - name: Microsoft Defender custom scan
+        shell: pwsh
+        run: |
+          $setup = Join-Path $env:GITHUB_WORKSPACE 'artifact\Kliptora-Setup-v2.3.5.exe'
+          $appFolder = Join-Path $env:GITHUB_WORKSPACE 'Kliptora\dist\Kliptora'
+          $status = Get-MpComputerStatus -ErrorAction SilentlyContinue
+          if ($null -eq $status) {
+            Write-Warning 'Defender bu runner uzerinde kullanilamiyor.'
+            exit 0
+          }
+          Start-MpScan -ScanType CustomScan -ScanPath $appFolder
+          Start-MpScan -ScanType CustomScan -ScanPath $setup
+          Start-Sleep -Seconds 3
+          $detections = Get-MpThreatDetection -ErrorAction SilentlyContinue | Where-Object {
+            $resources = ($_.Resources -join ' ')
+            $resources -like "*$setup*" -or $resources -like "*$appFolder*"
+          }
+          if ($detections) {
+            $detections | Format-List
+            throw 'Microsoft Defender kurulum dosyasini tehdit olarak algiladi.'
+          }
+          Write-Host 'Microsoft Defender bu dosya icin tehdit bildirmedi.'
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kliptora-v2.3.5-Windows
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            artifact/Kliptora-Setup-v2.3.5.exe
+            artifact/Kliptora-Setup-v2.3.5.sha256.txt
+
+      - name: Publish tagged GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $title = "Kliptora $tag"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag 'artifact\Kliptora-Setup-v2.3.5.exe' 'artifact\Kliptora-Setup-v2.3.5.sha256.txt' --clobber
+          } else {
+            gh release create $tag 'artifact\Kliptora-Setup-v2.3.5.exe' 'artifact\Kliptora-Setup-v2.3.5.sha256.txt' --title $title --generate-notes
+          }
