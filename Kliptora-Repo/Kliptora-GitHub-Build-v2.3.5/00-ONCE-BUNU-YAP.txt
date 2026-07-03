@@ -1,0 +1,14 @@
+KLIPTORA SETUP.EXE OLUSTURMA
+
+1) Bu klasörün içindeki HER ŞEYİ GitHub'daki centrion12/Kliptora deposunun köküne yükle.
+   .github klasörü de mutlaka yüklenecek.
+2) GitHub'da Actions sekmesine gir.
+3) "Build clean Windows installer" iş akışını aç.
+4) Run workflow > Run workflow düğmesine bas.
+5) Yeşil tik gelince sayfanın altındaki Artifacts bölümünden
+   "Kliptora-v2.3.3-Windows" dosyasını indir.
+6) İnen ZIP'in içinde normal Kliptora-Setup-v2.3.3.exe bulunacak.
+
+Not: Kod imzalama sertifikası yoksa Windows SmartScreen uyarısı yine çıkabilir.
+Bu, dosyanın otomatik olarak zararlı olduğu anlamına gelmez; fakat piyasaya sürmeden önce
+sertifika ile imzalamak ve bağımsız çoklu tarama yapmak gerekir.

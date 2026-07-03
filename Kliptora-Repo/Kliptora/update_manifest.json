@@ -1,0 +1,7 @@
+{
+  "version": "2.3.1",
+  "app": "Kliptora",
+  "entry": "Kliptora.exe",
+  "channel": "stable",
+  "notes": "Kurulum arayüzünün yanıt vermeme sorunu giderildi; kurulum ilerlemesi dosya boyutuna göre akıcı ve gerçek zamanlı gösteriliyor."
+}

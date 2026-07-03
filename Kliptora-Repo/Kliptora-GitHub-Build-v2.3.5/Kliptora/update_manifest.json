@@ -1,0 +1,7 @@
+{
+  "version": "2.3.5",
+  "app": "Kliptora",
+  "entry": "Kliptora.exe",
+  "channel": "stable",
+  "notes": "FFmpeg ve Deno kurulum paketine dahil edildi. İlk açılışta ek araç kurulumu gerekmez; kontrol/onarma işlemleri uygulamayı kapatmaz."
+}

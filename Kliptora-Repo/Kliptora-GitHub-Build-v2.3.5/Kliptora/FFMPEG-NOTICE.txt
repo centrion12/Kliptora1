@@ -1,0 +1,15 @@
+FFmpeg notice
+=============
+
+Kliptora includes unmodified FFmpeg command-line binaries (ffmpeg.exe and
+ffprobe.exe) from the BtbN FFmpeg-Builds project, LGPL static Windows variant.
+
+Build project: https://github.com/BtbN/FFmpeg-Builds
+Floating build asset: ffmpeg-master-latest-win64-lgpl.zip
+FFmpeg source: https://ffmpeg.org/download.html
+FFmpeg legal information: https://ffmpeg.org/legal.html
+
+FFmpeg is a separate work and is licensed under the GNU Lesser General Public
+License version 2.1 or later for this build variant. A copy of LGPL 2.1 is
+included as FFMPEG-LICENSE-LGPL-2.1.txt. Kliptora invokes FFmpeg as a separate
+command-line program and does not modify it.
